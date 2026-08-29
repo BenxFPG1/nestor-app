@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nestor — Privacy</title>
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#101814;--card:#18211d;--line:#26312c;--fg:#eef2ef;--mute:#8b9a92;--ok:#4ade80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+main{max-width:44rem;margin:0 auto;padding:3rem 1.25rem 5rem}
+h1{font-size:1.6rem;letter-spacing:-.02em;margin:0 0 .25rem}
+h2{font-size:1.05rem;margin:2.25rem 0 .5rem}
+.sub{color:var(--mute);margin:0 0 2rem}
+p,li{color:#dbe4de}
+a{color:var(--ok)}
+ul{padding-left:1.15rem}
+table{width:100%;border-collapse:collapse;margin:.5rem 0 1rem;font-size:.93rem}
+th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:500;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.15rem;margin:1.25rem 0}
+footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--line);color:var(--mute);font-size:.87rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Privacy</h1>
+<p class="sub">Nestor &middot; laatst bijgewerkt 29 augustus 2026</p>
+
+<p>Nestor is een persoonlijke deadman switch: geef je een tijd lang geen
+levensteken, dan waarschuwt Nestor de contacten die je zelf hebt ingesteld.
+Dat werkt alleen als er gegevens over jou worden bewaard en op het juiste
+moment worden gedeeld. Hieronder staat precies welke, en met wie.</p>
+
+<div class="card">
+<strong>De kern in twee zinnen.</strong> Nestor bewaart je naam, telefoonnummer
+en laatst bekende locatie, en deelt die uitsluitend met de contacten die jij
+zelf hebt opgegeven, uitsluitend op het moment dat er een alarm afgaat. Er gaat
+niets naar adverteerders, analysediensten of andere derden.
+</div>
+
+<h2>Welke gegevens</h2>
+<table>
+<tr><th>Gegeven</th><th>Waarvoor</th></tr>
+<tr><td>Naam</td><td>Staat in het alarmbericht, zodat je contact weet om wie het gaat</td></tr>
+<tr><td>Telefoonnummer</td><td>Om jou herinneringen te sturen</td></tr>
+<tr><td>Telefoonnummers van je contacten</td><td>Om hen te kunnen waarschuwen</td></tr>
+<tr><td>Levenstekens (tijdstip en bron)</td><td>Om te bepalen of je op tijd hebt ingecheckt</td></tr>
+<tr><td>Locatie (breedte- en lengtegraad)</td><td>Alleen als je die meestuurt; komt in het alarmbericht te staan</td></tr>
+<tr><td>Verzonden berichten en hun afleverstatus</td><td>Om te kunnen zien of een alarm daadwerkelijk is aangekomen</td></tr>
+</table>
+
+<h2>Met wie gedeeld</h2>
+<ul>
+<li><strong>Je eigen contacten.</strong> Bij een alarm ontvangen zij je naam,
+hoe lang je niet hebt ingecheckt, en je laatst bekende locatie met hoe oud die
+is. Dit is het hele doel van Nestor.</li>
+<li><strong>De bezorgers van die berichten.</strong> WhatsApp-berichten lopen
+via Meta, sms via Twilio. Zij zien de inhoud van het bericht omdat zij het
+afleveren.</li>
+<li><strong>Supabase</strong> host de database en de servercode, in de EU
+(regio eu-west-1, Ierland).</li>
+</ul>
+<p>Verder met niemand. Er zitten geen trackers, advertentiepixels of
+analysediensten in Nestor.</p>
+
+<h2>Hoe lang bewaard</h2>
+<p>Levenstekens, systeemgebeurtenissen en binnengekomen antwoorden worden na
+<strong>90 dagen</strong> automatisch verwijderd. Je account, contacten en de
+geschiedenis van alarmen blijven bestaan zolang je Nestor gebruikt.</p>
+
+<h2>Beveiliging</h2>
+<p>Je telefoon praat met de server via een geheime sleutel die alleen op jouw
+toestel staat; in de database staat daar enkel een onomkeerbare hash van. De
+databasetabellen zijn afgeschermd met row level security en alleen de servercode
+kan erbij. Alle verbindingen lopen over HTTPS.</p>
+
+<h2>Jouw rechten</h2>
+<p>Je kunt op elk moment inzage vragen in wat er over je is opgeslagen, het
+laten corrigeren, of alles laten verwijderen. Verwijderen is definitief en
+onmiddellijk: je account, je contacten, je locatiegegevens en je
+berichtgeschiedenis. Stuur daarvoor een bericht naar het adres hieronder.</p>
+
+<h2>Contacten die gewaarschuwd worden</h2>
+<p>Zet alleen mensen in Nestor die weten dat ze erin staan. Zij ontvangen op
+een onverwacht moment een bericht met jouw gegevens; dat hoort geen verrassing
+te zijn. Een contact dat er niet meer in wil, haal je eruit en ontvangt daarna
+niets meer.</p>
+
+<h2>Wijzigingen</h2>
+<p>Verandert er iets wezenlijks aan wat Nestor bewaart of met wie het wordt
+gedeeld, dan wordt deze pagina bijgewerkt en de datum bovenaan aangepast.</p>
+
+<footer>
+Vragen, inzage of verwijdering: <a href="mailto:zijlstraantonie@gmail.com">zijlstraantonie@gmail.com</a><br>
+Verwerkingsverantwoordelijke: Antonie Zijlstra, Nederland.<br>
+<a href="./">Terug naar Nestor</a>
+</footer>
+</main>
+</body>
+</html>
