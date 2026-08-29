@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nestor</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nestor">
+<meta name="theme-color" content="#101814">
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#101814; --card:#18211d; --line:#26312c; --fg:#eef2ef; --mute:#8b9a92;
+  --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  display:flex; flex-direction:column;
+  padding:max(1.25rem,env(safe-area-inset-top)) 1.25rem max(1.25rem,env(safe-area-inset-bottom));
+  overscroll-behavior:none;
+}
+header{display:flex;align-items:center;gap:.6rem;margin-bottom:1.5rem}
+header h1{font-size:1rem;font-weight:600;margin:0;letter-spacing:.02em}
+header .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--mute);flex:none}
+main{flex:1;display:flex;flex-direction:column;justify-content:center;gap:1.5rem}
+.status{text-align:center}
+.status .label{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--mute)}
+.status .big{font-size:2.6rem;font-weight:650;line-height:1.1;margin:.4rem 0 .2rem;letter-spacing:-.02em}
+.status .sub{color:var(--mute);font-size:.95rem}
+button.checkin{
+  appearance:none;border:none;border-radius:50%;
+  width:min(62vw,240px);height:min(62vw,240px);align-self:center;
+  background:var(--ok);color:#062b14;font-size:1.35rem;font-weight:650;
+  letter-spacing:-.01em;cursor:pointer;transition:transform .12s,filter .12s;
+  box-shadow:0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -18px rgba(74,222,128,.5);
+}
+button.checkin:active{transform:scale(.96);filter:brightness(.94)}
+button.checkin:disabled{opacity:.5;cursor:default;transform:none}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem}
+.row{display:flex;justify-content:space-between;gap:1rem;padding:.35rem 0;font-size:.9rem}
+.row span:first-child{color:var(--mute)}
+.row a{color:var(--ok);text-decoration:none}
+footer{display:flex;gap:.6rem;margin-top:1.25rem}
+footer button{
+  flex:1;appearance:none;background:transparent;color:var(--mute);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem;font-size:.85rem;cursor:pointer;
+}
+footer button:active{background:var(--card)}
+.banner{border-radius:10px;padding:.6rem .8rem;font-size:.85rem;text-align:center}
+.banner.warn{background:rgba(251,191,36,.12);color:var(--warn)}
+.banner.bad{background:rgba(248,113,113,.12);color:var(--bad)}
+.hidden{display:none}
+.setup{max-width:22rem;margin:auto;text-align:center}
+.setup input{
+  width:100%;margin:.8rem 0;padding:.75rem;border-radius:10px;
+  border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:1rem;
+}
+.setup button{
+  width:100%;padding:.8rem;border:none;border-radius:10px;
+  background:var(--ok);color:#062b14;font-size:1rem;font-weight:600;cursor:pointer;
+}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>Nestor</h1>
+</header>
+
+<div id="setup" class="setup hidden">
+  <p>Plak je device secret om deze telefoon te koppelen.</p>
+  <input id="secret" type="password" placeholder="device secret" autocomplete="off"
+         autocapitalize="off" autocorrect="off" spellcheck="false">
+  <button id="save">Koppelen</button>
+  <p id="setupError" class="banner bad hidden"></p>
+</div>
+
+<main id="app" class="hidden">
+  <div id="banner" class="banner hidden"></div>
+  <div class="status">
+    <div class="label" id="statusLabel">Status</div>
+    <div class="big" id="statusBig">…</div>
+    <div class="sub" id="statusSub"></div>
+  </div>
+  <button class="checkin" id="checkin">Ik ben oké</button>
+  <div class="card">
+    <div class="row"><span>Laatste check-in</span><span id="lastCheckin">–</span></div>
+    <div class="row"><span>Laatste locatie</span><span id="lastLocation">–</span></div>
+    <div class="row"><span>Contacten</span><span id="contacts">–</span></div>
+  </div>
+</main>
+
+<footer id="actions" class="hidden">
+  <button id="pause">Vakantie</button>
+  <button id="refresh">Ververs</button>
+</footer>
+
+<script>
+const API = "https://whkjbosflrniqznmpgxy.supabase.co/functions/v1";
+const KEY = "nestor.secret";
+
+const $ = (id) => document.getElementById(id);
+let secret = localStorage.getItem(KEY);
+
+// Het secret mag ook via de link binnenkomen: #s=... Dat staat in het fragment,
+// dus het gaat nooit naar de server en belandt niet in serverlogs.
+const fragment = new URLSearchParams(location.hash.slice(1));
+if (fragment.get("s")) {
+  secret = fragment.get("s");
+  localStorage.setItem(KEY, secret);
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
+function nl(iso, opts) {
+  return new Intl.DateTimeFormat("nl-NL", opts).format(new Date(iso));
+}
+
+function relatief(iso) {
+  const min = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (min < 2) return "zojuist";
+  if (min < 90) return min + " minuten geleden";
+  const uur = Math.round(min / 60);
+  if (uur < 36) return uur + " uur geleden";
+  return Math.round(uur / 24) + " dagen geleden";
+}
+
+function klok(iso) {
+  return nl(iso, { hour: "2-digit", minute: "2-digit" });
+}
+
+function dagdeel(iso) {
+  const d = new Date(iso), nu = new Date();
+  const zelfdeDag = d.toDateString() === nu.toDateString();
+  const morgen = new Date(nu.getTime() + 86400000).toDateString() === d.toDateString();
+  if (zelfdeDag) return klok(iso);
+  if (morgen) return "morgen " + klok(iso);
+  return nl(iso, { weekday: "short", day: "numeric", month: "short" }) + " " + klok(iso);
+}
+
+const KLEUR = { gedekt: "var(--ok)", herinnerd: "var(--warn)", over_tijd: "var(--warn)",
+                alarm: "var(--bad)", gepauzeerd: "var(--mute)" };
+
+function toon(d) {
+  $("dot").style.background = KLEUR[d.state] || "var(--mute)";
+  $("app").classList.remove("hidden");
+  $("actions").classList.remove("hidden");
+  $("setup").classList.add("hidden");
+
+  const banner = $("banner");
+  if (d.dry_run) {
+    banner.textContent = "Testmodus: er wordt niets echt verstuurd.";
+    banner.className = "banner warn";
+  } else if (d.contacts === 0) {
+    banner.textContent = "Geen contacten ingesteld — er is niemand om te waarschuwen.";
+    banner.className = "banner bad";
+  } else {
+    banner.className = "banner hidden";
+  }
+
+  if (d.state === "gepauzeerd") {
+    $("statusLabel").textContent = "Gepauzeerd";
+    $("statusBig").textContent = "tot " + dagdeel(d.paused_until);
+    $("statusSub").textContent = "De bewaking staat uit.";
+  } else if (d.state === "alarm") {
+    $("statusLabel").textContent = "Alarm";
+    $("statusBig").textContent = "Contacten gewaarschuwd";
+    $("statusSub").textContent = "Tik hieronder om te laten weten dat alles goed is.";
+  } else if (d.state === "herinnerd") {
+    $("statusLabel").textContent = "Bijna over tijd";
+    $("statusBig").textContent = "vóór " + dagdeel(d.deadline_at);
+    $("statusSub").textContent = "Daarna worden je contacten gewaarschuwd.";
+  } else if (d.state === "over_tijd") {
+    $("statusLabel").textContent = "Over tijd";
+    $("statusBig").textContent = "check even in";
+    $("statusSub").textContent = "De deadline is verstreken.";
+  } else {
+    $("statusLabel").textContent = "Gedekt tot";
+    $("statusBig").textContent = dagdeel(d.deadline_at);
+    $("statusSub").textContent = "Je hoeft verder niets te doen.";
+  }
+
+  $("lastCheckin").textContent = relatief(d.last_active_at);
+  $("contacts").textContent = d.contacts;
+  const loc = $("lastLocation");
+  if (d.location) {
+    loc.innerHTML = '<a href="https://maps.google.com/?q=' + d.location.lat + "," +
+      d.location.lng + '">' + relatief(d.location.at) + "</a>";
+  } else {
+    loc.textContent = "onbekend";
+  }
+}
+
+async function api(pad, opties = {}) {
+  const res = await fetch(API + pad, {
+    ...opties,
+    headers: { "x-device-secret": secret, "Content-Type": "application/json", ...(opties.headers || {}) },
+  });
+  if (res.status === 401) { fout("Dit device secret klopt niet."); throw new Error("unauthorized"); }
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return await res.json();
+}
+
+function fout(bericht) {
+  localStorage.removeItem(KEY);
+  secret = null;
+  $("app").classList.add("hidden");
+  $("actions").classList.add("hidden");
+  $("setup").classList.remove("hidden");
+  const p = $("setupError");
+  p.textContent = bericht;
+  p.classList.remove("hidden");
+}
+
+async function ververs() {
+  if (!secret) { $("setup").classList.remove("hidden"); return; }
+  try { toon(await api("/status?format=json")); } catch (e) { console.error(e); }
+}
+
+// Locatie is nooit blokkerend: zonder coördinaten telt de check-in gewoon mee
+// en blijft de laatst bekende locatie staan.
+function locatie() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    const klaar = setTimeout(() => resolve(null), 6000);
+    navigator.geolocation.getCurrentPosition(
+      (p) => { clearTimeout(klaar); resolve({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+      () => { clearTimeout(klaar); resolve(null); },
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 },
+    );
+  });
+}
+
+$("checkin").addEventListener("click", async () => {
+  const knop = $("checkin");
+  knop.disabled = true;
+  knop.textContent = "Bezig…";
+  try {
+    const pos = await locatie();
+    await api("/heartbeat", {
+      method: "POST",
+      body: JSON.stringify({ source: "button", lat: pos?.lat ?? null, lng: pos?.lng ?? null }),
+    });
+    if (navigator.vibrate) navigator.vibrate(30);
+    await ververs();
+  } catch (e) {
+    console.error(e);
+  } finally {
+    knop.disabled = false;
+    knop.textContent = "Ik ben oké";
+  }
+});
+
+$("pause").addEventListener("click", async () => {
+  const uren = prompt("Hoeveel uur pauze? (0 = bewaking weer aan)", "72");
+  if (uren === null) return;
+  try {
+    await api("/pause", { method: "POST", body: JSON.stringify({ hours: Number(uren) }) });
+    await ververs();
+  } catch (e) { console.error(e); }
+});
+
+$("refresh").addEventListener("click", ververs);
+
+$("save").addEventListener("click", () => {
+  const waarde = $("secret").value.trim();
+  if (!waarde) return;
+  secret = waarde;
+  localStorage.setItem(KEY, waarde);
+  $("setupError").classList.add("hidden");
+  ververs();
+});
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) ververs(); });
+ververs();
+setInterval(ververs, 60000);
+</script>
+</body>
+</html>
