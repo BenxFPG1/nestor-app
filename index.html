@@ -96,7 +96,7 @@ footer button:active{background:var(--card)}
 </main>
 
 <footer id="actions" class="hidden">
-  <button id="pause">Vakantie</button>
+  <button id="uit" class="hidden">Zet uit</button>
   <button id="refresh">Ververs</button>
 </footer>
 
@@ -162,6 +162,27 @@ function toon(d) {
     banner.className = "banner hidden";
   }
 
+  const knop = $("checkin");
+  const uitKnop = $("uit");
+
+  if (d.state === "uit") {
+    $("statusLabel").textContent = "Bewaking";
+    $("statusBig").textContent = "staat uit";
+    $("statusSub").textContent = "Zet hem aan als je op pad gaat. Daarna heb je " +
+      "twaalf uur om weer van je te laten horen.";
+    knop.textContent = "Zet bewaking aan";
+    knop.dataset.actie = "aan";
+    uitKnop.classList.add("hidden");
+    $("lastCheckin").textContent = relatief(d.last_active_at);
+    $("contacts").textContent = d.contacts;
+    toonLocatie(d);
+    return;
+  }
+
+  knop.textContent = "Ik ben oké";
+  knop.dataset.actie = "checkin";
+  uitKnop.classList.remove("hidden");
+
   if (d.state === "gepauzeerd") {
     $("statusLabel").textContent = "Gepauzeerd";
     $("statusBig").textContent = "tot " + dagdeel(d.paused_until);
@@ -179,13 +200,18 @@ function toon(d) {
     $("statusBig").textContent = "check even in";
     $("statusSub").textContent = "De deadline is verstreken.";
   } else {
-    $("statusLabel").textContent = "Gedekt tot";
-    $("statusBig").textContent = dagdeel(d.deadline_at);
-    $("statusSub").textContent = "Je hoeft verder niets te doen.";
+    $("statusLabel").textContent = "Nog";
+    $("statusBig").textContent = resterend(d.deadline_at);
+    $("statusSub").textContent = "Daarna worden je contacten gewaarschuwd, om " +
+      dagdeel(d.deadline_at) + ".";
   }
 
   $("lastCheckin").textContent = relatief(d.last_active_at);
   $("contacts").textContent = d.contacts;
+  toonLocatie(d);
+}
+
+function toonLocatie(d) {
   const loc = $("lastLocation");
   if (d.location) {
     loc.innerHTML = '<a href="https://maps.google.com/?q=' + d.location.lat + "," +
@@ -193,6 +219,15 @@ function toon(d) {
   } else {
     loc.textContent = "onbekend";
   }
+}
+
+/** "11 u 23 m" — wat er nog over is voordat de contacten aan de beurt zijn. */
+function resterend(deadline) {
+  const ms = new Date(deadline) - new Date();
+  if (ms <= 0) return "geen tijd meer";
+  const minuten = Math.floor(ms / 60000);
+  const uren = Math.floor(minuten / 60);
+  return uren > 0 ? uren + " u " + (minuten % 60) + " m" : minuten + " m";
 }
 
 async function api(pad, opties = {}) {
@@ -235,31 +270,39 @@ function locatie() {
   });
 }
 
+// Dezelfde grote knop doet twee dingen: staat de bewaking uit, dan zet hij hem
+// aan; staat hij aan, dan is het je levensteken en begint de klok opnieuw.
 $("checkin").addEventListener("click", async () => {
   const knop = $("checkin");
+  const actie = knop.dataset.actie === "aan" ? "aan" : "checkin";
+  const oud = knop.textContent;
   knop.disabled = true;
   knop.textContent = "Bezig…";
   try {
-    const pos = await locatie();
-    await api("/heartbeat", {
-      method: "POST",
-      body: JSON.stringify({ source: "button", lat: pos?.lat ?? null, lng: pos?.lng ?? null }),
-    });
+    if (actie === "aan") {
+      await api("/arm", { method: "POST", body: JSON.stringify({ on: true }) });
+    } else {
+      // Locatie is nooit blokkerend; zonder coördinaten telt de check-in gewoon.
+      const pos = await locatie();
+      await api("/heartbeat", {
+        method: "POST",
+        body: JSON.stringify({ source: "button", lat: pos?.lat ?? null, lng: pos?.lng ?? null }),
+      });
+    }
     if (navigator.vibrate) navigator.vibrate(30);
     await ververs();
   } catch (e) {
     console.error(e);
+    knop.textContent = oud;
   } finally {
     knop.disabled = false;
-    knop.textContent = "Ik ben oké";
   }
 });
 
-$("pause").addEventListener("click", async () => {
-  const uren = prompt("Hoeveel uur pauze? (0 = bewaking weer aan)", "72");
-  if (uren === null) return;
+$("uit").addEventListener("click", async () => {
+  if (!confirm("Bewaking uitzetten? Er gaat dan niets meer af.")) return;
   try {
-    await api("/pause", { method: "POST", body: JSON.stringify({ hours: Number(uren) }) });
+    await api("/arm", { method: "POST", body: JSON.stringify({ on: false }) });
     await ververs();
   } catch (e) { console.error(e); }
 });
