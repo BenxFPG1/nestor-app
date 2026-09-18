@@ -279,11 +279,15 @@ $("checkin").addEventListener("click", async () => {
   knop.disabled = true;
   knop.textContent = "Bezig…";
   try {
+    // Locatie is nooit blokkerend; zonder coördinaten telt de druk op de knop
+    // gewoon en blijft de laatst bekende plek staan.
+    const pos = await locatie();
     if (actie === "aan") {
-      await api("/arm", { method: "POST", body: JSON.stringify({ on: true }) });
+      await api("/arm", {
+        method: "POST",
+        body: JSON.stringify({ on: true, lat: pos?.lat ?? null, lng: pos?.lng ?? null }),
+      });
     } else {
-      // Locatie is nooit blokkerend; zonder coördinaten telt de check-in gewoon.
-      const pos = await locatie();
       await api("/heartbeat", {
         method: "POST",
         body: JSON.stringify({ source: "button", lat: pos?.lat ?? null, lng: pos?.lng ?? null }),
