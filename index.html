@@ -58,6 +58,13 @@ footer{display:flex;gap:.6rem;margin-top:1.25rem}
 .keuze .kiesKnop{margin-top:.6rem;display:none;width:100%;padding:.6rem;border-radius:10px;border:0;background:var(--ok);color:#062b14;font-weight:600}
 .keuze.open .kiesKnop{display:block}
 .mute{color:var(--mute);font-size:.9rem}
+.gat{display:flex;align-items:center;gap:.6rem;margin:.4rem 0;font-size:.92rem}
+.gat code{background:var(--line);padding:.1rem .4rem;border-radius:6px}
+.gat select{flex:1;padding:.4rem;border-radius:8px;border:1px solid var(--line);background:var(--card);color:inherit;font:inherit}
+.keuze .gaten{display:none;margin-top:.6rem}
+.keuze.open .gaten{display:block}
+.keuze .waarsch{display:none;color:var(--warn);font-size:.88rem;margin-top:.4rem}
+.keuze.open .waarsch{display:block}
 footer button{
   flex:1;appearance:none;background:transparent;color:var(--mute);
   border:1px solid var(--line);border-radius:10px;padding:.7rem;font-size:.85rem;cursor:pointer;
@@ -113,8 +120,8 @@ footer button:active{background:var(--card)}
     <b>Welk bericht krijgen je contacten?</b>
     <button id="kiesSluit" type="button">Sluiten</button>
   </div>
-  <p class="mute">Alleen berichten die bij WhatsApp zijn goedgekeurd en passen bij wat het
-  alarm meestuurt. Tik op een bericht om te zien hoe het eruitziet.</p>
+  <p class="mute">Alle berichten die bij WhatsApp zijn goedgekeurd. Tik op een bericht,
+  kies per gat wat erin komt, en bevestig.</p>
   <div id="kiesLijst"></div>
 </section>
 
@@ -344,14 +351,26 @@ $("uit").addEventListener("click", async () => {
 });
 
 // --- Welk bericht je contacten krijgen ----------------------------------------
-// De lijst komt van Meta via /templates, al gefilterd op wat past. Je kiest het
-// bericht mét locatie; de variant zonder locatie wordt automatisch gekoppeld
-// als er een sjabloon met dezelfde naam plus "_zonder_locatie" bestaat, en
-// anders de standaard.
-const VOORBEELD = ["Antonie", "12", "3 uur geleden", "51.539370,4.552073"];
+// Alle goedgekeurde sjablonen van Meta, ongefilterd. Wat vast staat is dat elk
+// gat een waarde moet krijgen: WhatsApp weigert een bericht met te veel of te
+// weinig waarden. Dus per gat kies je wat erin komt, en de server controleert
+// het nog een keer tegen het echte sjabloon vóór hij opslaat.
+const GAT_LABEL = {
+  naam: "je naam",
+  uren: "aantal uur zonder levensteken",
+  locatie_leeftijd: "hoe oud de locatie is (\"3 uur geleden\")",
+  coordinaten: "de coördinaten (zet maps.google.com/?q= ervoor in de tekst)",
+  kaartlink: "een complete kaartlink",
+};
+const GAT_VOORBEELD = {
+  naam: "Antonie", uren: "12", locatie_leeftijd: "3 uur geleden",
+  coordinaten: "51.539370,4.552073", kaartlink: "https://maps.google.com/?q=51.539370,4.552073",
+};
+// Een redelijke eerste gok per positie, dezelfde afspraak als de standaard.
+const GAT_GOK = ["naam", "uren", "locatie_leeftijd", "coordinaten"];
 
-function voorbeeld(body) {
-  return body.replace(/\{\{(\d)\}\}/g, (_, n) => VOORBEELD[Number(n) - 1] ?? "…");
+function voorbeeld(body, params) {
+  return body.replace(/\{\{(\d+)\}\}/g, (_, n) => GAT_VOORBEELD[params[Number(n) - 1]] ?? "…");
 }
 
 async function openKiezer() {
@@ -363,40 +382,84 @@ async function openKiezer() {
     lijst.innerHTML = '<p class="mute">Kon de lijst niet ophalen. Probeer het straks nog eens.</p>';
     return;
   }
-  const zonder = new Set(d.no_location.map((k) => k.name));
   lijst.innerHTML = "";
-  for (const k of d.with_location) {
-    const paar = zonder.has(k.name + "_zonder_locatie") ? k.name + "_zonder_locatie" : d.defaults.no_location;
+  if (d.templates.length === 0) { lijst.innerHTML = '<p class="mute">Geen goedgekeurde sjablonen.</p>'; return; }
+
+  for (const t of d.templates) {
+    const isHuidig = t.name === d.current.with_location.name;
+    const params = isHuidig && d.current.with_location.params
+      ? d.current.with_location.params.slice()
+      : Array.from({ length: t.gaps }, (_, i) => GAT_GOK[i] ?? "naam");
+
     const el = document.createElement("div");
-    el.className = "keuze" + (k.name === d.current.with_location ? " huidig open" : "");
+    el.className = "keuze" + (isHuidig ? " huidig open" : "");
     el.innerHTML =
       '<div class="naam"><span></span><small></small></div>' +
+      '<div class="gaten"></div>' +
       "<pre></pre>" +
+      '<div class="waarsch"></div>' +
       '<button type="button" class="kiesKnop"></button>';
-    el.querySelector(".naam span").textContent = k.name;
+    el.querySelector(".naam span").textContent = t.name;
     el.querySelector(".naam small").textContent =
-      k.name === d.current.with_location ? "nu in gebruik" : (k.name === d.defaults.with_location ? "standaard" : "");
-    el.querySelector("pre").textContent = voorbeeld(k.body) +
-      "\n\nZonder locatie: " + paar;
+      (isHuidig ? "nu in gebruik · " : "") + t.gaps + (t.gaps === 1 ? " gat" : " gaten") +
+      (t.category !== "UTILITY" ? " · " + t.category.toLowerCase() : "");
+
+    const pre = el.querySelector("pre");
+    const gaten = el.querySelector(".gaten");
+    const waarsch = el.querySelector(".waarsch");
     const knop = el.querySelector(".kiesKnop");
-    knop.textContent = k.name === d.current.with_location ? "Dit is het huidige bericht" : "Gebruik dit bericht";
-    knop.disabled = k.name === d.current.with_location;
+
+    function teken() {
+      pre.textContent = voorbeeld(t.body, params);
+      const gebruiktLocatie = params.some((g) => d.location_gaps.includes(g));
+      waarsch.textContent = gebruiktLocatie
+        ? "Is er geen locatie bekend, dan gaat in plaats hiervan het standaardbericht zonder locatie uit."
+        : "";
+      if (t.category !== "UTILITY") {
+        waarsch.textContent += (waarsch.textContent ? " " : "") +
+          "Dit is een " + t.category.toLowerCase() + "-sjabloon: duurder per bericht, en WhatsApp kan het blokkeren bij ontvangers die ooit 'stop' stuurden.";
+      }
+    }
+    for (let i = 0; i < t.gaps; i++) {
+      const rij = document.createElement("label");
+      rij.className = "gat";
+      const sel = document.createElement("select");
+      for (const g of d.gap_values) {
+        const o = document.createElement("option");
+        o.value = g; o.textContent = GAT_LABEL[g] ?? g;
+        if (g === params[i]) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => { params[i] = sel.value; teken(); });
+      rij.innerHTML = "<code>{{" + (i + 1) + "}}</code>";
+      rij.appendChild(sel);
+      gaten.appendChild(rij);
+    }
+    if (t.gaps === 0) gaten.innerHTML = '<p class="mute">Dit bericht heeft geen gaten; het gaat letterlijk zo uit.</p>';
+    teken();
+
+    knop.textContent = isHuidig ? "Bewaar de wijziging" : "Gebruik dit bericht";
     el.querySelector(".naam").addEventListener("click", () => el.classList.toggle("open"));
     knop.addEventListener("click", async () => {
-      if (!confirm("Vanaf nu krijgen je contacten \"" + k.name + "\" als er een alarm afgaat. Doorgaan?")) return;
+      if (!confirm("Vanaf nu krijgen je contacten \"" + t.name + "\" als er een alarm afgaat. Doorgaan?")) return;
       knop.disabled = true; knop.textContent = "Bezig…";
       try {
-        await api("/templates", { method: "POST", body: JSON.stringify({ with_location: k.name, no_location: paar }) });
+        const r = await fetch(API + "/templates", {
+          method: "POST",
+          headers: { "x-device-secret": secret, "Content-Type": "application/json" },
+          body: JSON.stringify({ with_location: { name: t.name, params }, no_location: null }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.detail || j.error || ("HTTP " + r.status));
         $("kies").classList.add("hidden");
         await ververs();
       } catch (e) {
         knop.disabled = false; knop.textContent = "Gebruik dit bericht";
-        alert("Opslaan mislukt.");
+        alert("Niet opgeslagen: " + e.message);
       }
     });
     lijst.appendChild(el);
   }
-  if (d.with_location.length === 0) lijst.innerHTML = '<p class="mute">Geen passende sjablonen gevonden.</p>';
 }
 
 $("bericht").addEventListener("click", openKiezer);
