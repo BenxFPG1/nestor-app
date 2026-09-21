@@ -46,6 +46,18 @@ button.checkin:disabled{opacity:.5;cursor:default;transform:none}
 .row span:first-child{color:var(--mute)}
 .row a{color:var(--ok);text-decoration:none}
 footer{display:flex;gap:.6rem;margin-top:1.25rem}
+#kies{position:fixed;inset:0;background:var(--bg);padding:20px 16px;overflow:auto;z-index:5}
+.kies-kop{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem}
+.kies-kop button{background:none;border:1px solid var(--line);border-radius:8px;padding:.4rem .8rem;color:inherit}
+.keuze{border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;margin:.6rem 0;background:var(--card)}
+.keuze.huidig{border-color:var(--ok)}
+.keuze .naam{font-weight:600;display:flex;justify-content:space-between;gap:.5rem}
+.keuze .naam small{font-weight:400;color:var(--mute)}
+.keuze pre{white-space:pre-wrap;font:inherit;font-size:.92rem;margin:.6rem 0 0;color:var(--fg);display:none}
+.keuze.open pre{display:block}
+.keuze .kiesKnop{margin-top:.6rem;display:none;width:100%;padding:.6rem;border-radius:10px;border:0;background:var(--ok);color:#062b14;font-weight:600}
+.keuze.open .kiesKnop{display:block}
+.mute{color:var(--mute);font-size:.9rem}
 footer button{
   flex:1;appearance:none;background:transparent;color:var(--mute);
   border:1px solid var(--line);border-radius:10px;padding:.7rem;font-size:.85rem;cursor:pointer;
@@ -92,11 +104,23 @@ footer button:active{background:var(--card)}
     <div class="row"><span>Laatste check-in</span><span id="lastCheckin">–</span></div>
     <div class="row"><span>Laatste locatie</span><span id="lastLocation">–</span></div>
     <div class="row"><span>Contacten</span><span id="contacts">–</span></div>
+    <div class="row"><span>Bericht</span><span id="sjabloon">–</span></div>
   </div>
 </main>
 
+<section id="kies" class="hidden">
+  <div class="kies-kop">
+    <b>Welk bericht krijgen je contacten?</b>
+    <button id="kiesSluit" type="button">Sluiten</button>
+  </div>
+  <p class="mute">Alleen berichten die bij WhatsApp zijn goedgekeurd en passen bij wat het
+  alarm meestuurt. Tik op een bericht om te zien hoe het eruitziet.</p>
+  <div id="kiesLijst"></div>
+</section>
+
 <footer id="actions" class="hidden">
   <button id="uit" class="hidden">Zet uit</button>
+  <button id="bericht">Bericht</button>
   <button id="refresh">Ververs</button>
 </footer>
 
@@ -175,6 +199,7 @@ function toon(d) {
     uitKnop.classList.add("hidden");
     $("lastCheckin").textContent = relatief(d.last_active_at);
     $("contacts").textContent = d.contacts;
+    toonSjabloon(d);
     toonLocatie(d);
     return;
   }
@@ -208,7 +233,14 @@ function toon(d) {
 
   $("lastCheckin").textContent = relatief(d.last_active_at);
   $("contacts").textContent = d.contacts;
+  toonSjabloon(d);
   toonLocatie(d);
+}
+
+function toonSjabloon(d) {
+  const el = $("sjabloon");
+  if (!d.alert_template) { el.textContent = "–"; return; }
+  el.textContent = d.alert_template + (d.alert_template_is_default ? " (standaard)" : "");
 }
 
 function toonLocatie(d) {
@@ -310,6 +342,65 @@ $("uit").addEventListener("click", async () => {
     await ververs();
   } catch (e) { console.error(e); }
 });
+
+// --- Welk bericht je contacten krijgen ----------------------------------------
+// De lijst komt van Meta via /templates, al gefilterd op wat past. Je kiest het
+// bericht mét locatie; de variant zonder locatie wordt automatisch gekoppeld
+// als er een sjabloon met dezelfde naam plus "_zonder_locatie" bestaat, en
+// anders de standaard.
+const VOORBEELD = ["Antonie", "12", "3 uur geleden", "51.539370,4.552073"];
+
+function voorbeeld(body) {
+  return body.replace(/\{\{(\d)\}\}/g, (_, n) => VOORBEELD[Number(n) - 1] ?? "…");
+}
+
+async function openKiezer() {
+  const lijst = $("kiesLijst");
+  lijst.innerHTML = '<p class="mute">Ophalen bij WhatsApp…</p>';
+  $("kies").classList.remove("hidden");
+  let d;
+  try { d = await api("/templates"); } catch (e) {
+    lijst.innerHTML = '<p class="mute">Kon de lijst niet ophalen. Probeer het straks nog eens.</p>';
+    return;
+  }
+  const zonder = new Set(d.no_location.map((k) => k.name));
+  lijst.innerHTML = "";
+  for (const k of d.with_location) {
+    const paar = zonder.has(k.name + "_zonder_locatie") ? k.name + "_zonder_locatie" : d.defaults.no_location;
+    const el = document.createElement("div");
+    el.className = "keuze" + (k.name === d.current.with_location ? " huidig open" : "");
+    el.innerHTML =
+      '<div class="naam"><span></span><small></small></div>' +
+      "<pre></pre>" +
+      '<button type="button" class="kiesKnop"></button>';
+    el.querySelector(".naam span").textContent = k.name;
+    el.querySelector(".naam small").textContent =
+      k.name === d.current.with_location ? "nu in gebruik" : (k.name === d.defaults.with_location ? "standaard" : "");
+    el.querySelector("pre").textContent = voorbeeld(k.body) +
+      "\n\nZonder locatie: " + paar;
+    const knop = el.querySelector(".kiesKnop");
+    knop.textContent = k.name === d.current.with_location ? "Dit is het huidige bericht" : "Gebruik dit bericht";
+    knop.disabled = k.name === d.current.with_location;
+    el.querySelector(".naam").addEventListener("click", () => el.classList.toggle("open"));
+    knop.addEventListener("click", async () => {
+      if (!confirm("Vanaf nu krijgen je contacten \"" + k.name + "\" als er een alarm afgaat. Doorgaan?")) return;
+      knop.disabled = true; knop.textContent = "Bezig…";
+      try {
+        await api("/templates", { method: "POST", body: JSON.stringify({ with_location: k.name, no_location: paar }) });
+        $("kies").classList.add("hidden");
+        await ververs();
+      } catch (e) {
+        knop.disabled = false; knop.textContent = "Gebruik dit bericht";
+        alert("Opslaan mislukt.");
+      }
+    });
+    lijst.appendChild(el);
+  }
+  if (d.with_location.length === 0) lijst.innerHTML = '<p class="mute">Geen passende sjablonen gevonden.</p>';
+}
+
+$("bericht").addEventListener("click", openKiezer);
+$("kiesSluit").addEventListener("click", () => $("kies").classList.add("hidden"));
 
 $("refresh").addEventListener("click", ververs);
 
